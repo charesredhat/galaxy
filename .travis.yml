@@ -1,15 +1,38 @@
 language: python
 python: 2.7
+os:
+  - linux
+  - osx
 env:
+  - TOX_ENV=py34-lint
   - TOX_ENV=py27-lint
   - TOX_ENV=py26-lint
   - TOX_ENV=py27-unit
   - TOX_ENV=py26-unit
   - TOX_ENV=qunit
+  - TOX_ENV=first_startup
+matrix:
+  exclude:
+  - os: osx
+    env: TOX_ENV=py34-lint
+  - os: osx
+    env: TOX_ENV=py27-lint
+  - os: osx
+    env: TOX_ENV=py26-lint
+  - os: osx
+    env: TOX_ENV=py27-unit
+  - os: osx
+    env: TOX_ENV=py26-unit
+  - os: osx
+    env: TOX_ENV=qunit
 
 install:
   - pip install tox
   - if [ "$TOX_ENV" == "qunit" ]; then bash -c 'cd test/qunit && npm install'; fi
+  - if [ "$TOX_ENV" == "first_startup" ]; then bash -c "wget -q https://github.com/jmchilton/galaxy-downloads/raw/master/db_gx_rev_0127.sqlite && mv db_gx_rev_0127.sqlite database/universe.sqlite && bash manage_db.sh -c ./config/galaxy.ini.sample upgrade"; fi
 
-script: tox -e $TOX_ENV
+script: 
+  - tox -e $TOX_ENV
 
+notifications:
+  email: false
