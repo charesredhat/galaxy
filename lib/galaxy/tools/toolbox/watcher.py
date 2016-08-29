@@ -150,6 +150,12 @@ class ToolConfFileEventHandler(FileSystemEventHandler):
         self._handle(event)
 
     def _handle(self, event):
+        try:
+            import uwsgi
+            log.debug("UWSGI worker id '%s'", uwsgi.worker_id())
+        except Exception:
+            log.debug("callback on regular handler")
+            pass
         self.reload_callback()
 
 
