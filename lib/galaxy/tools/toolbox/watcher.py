@@ -100,7 +100,12 @@ class ToolConfWatcher(object):
                 if new_mod_time != mod_time:
                     if hashes[path] != md5_hash_file(path):
                         self.paths[path] = new_mod_time
-                        log.debug("The file '%s' has changes", path)
+                        log.debug("The file '%s' has changes.", path)
+                        try:
+                            import uwsgi
+                            log.warning("Changed files found in worker '%s'", uwsgi.worker_id())
+                        except Exception:
+                            pass
                         do_reload = True
 
             if do_reload:
