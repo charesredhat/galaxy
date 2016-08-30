@@ -109,9 +109,9 @@ class ToolConfWatcher(object):
                         do_reload = True
 
             if do_reload:
-                t = threading.Thread(target=lambda: self.event_handler.on_any_event(None))
+                t = threading.Thread(target=self.event_handler.on_any_event)
                 t.daemon = True
-                register_postfork_function(t.start)
+                t.start()
             time.sleep(1)
 
     def monitor(self, path):
@@ -146,8 +146,8 @@ class ToolConfFileEventHandler(FileSystemEventHandler):
     def __init__(self, reload_callback):
         self.reload_callback = reload_callback
 
-    def on_any_event(self, event):
-        self._handle(event)
+    def on_any_event(self, event=None):
+        self._handle(event=None)
 
     def _handle(self, event):
         try:
