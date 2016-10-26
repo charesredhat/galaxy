@@ -184,6 +184,9 @@ class ShellJobRunner( AsynchronousJobRunner ):
         for job_destination_id, v in job_destinations.items():
             job_destination = v['job_destination']
             job_ids = v['job_ids']
+            if not job_ids:
+                # no running jobs, no need to ask for status updates
+                continue
             shell_params, job_params = self.parse_destination_params(job_destination.params)
             shell, job_interface = self.get_cli_plugins(shell_params, job_params)
             cmd_out = shell.execute(job_interface.get_status(job_ids))
