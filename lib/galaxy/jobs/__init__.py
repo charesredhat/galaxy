@@ -771,7 +771,7 @@ class JobWrapper( object ):
         # directory to be set before prepare is run, or else premature deletion
         # and job recovery fail.
         # Create the working dir if necessary
-        self._create_working_directory()
+        self._create_working_directories()
         self.dataset_path_rewriter = self._job_dataset_path_rewriter( self.working_directory )
         self.output_paths = None
         self.output_hdas_and_paths = None
@@ -928,23 +928,30 @@ class JobWrapper( object ):
             self.write_version_cmd = None
         return self.extra_filenames
 
-    def _create_working_directory( self ):
+    def _create_working_directories(self):
+        """
+        Creates job working directory, and if configured, the job_script_directory
+        """
+        self.working_directory = self._create_directory(base_dir="job_work")
+        # The tool execution is given a working directory beneath the
+        # "job" working directory.
+        self.tool_working_directory = os.path.join(self.working_directory, "working")
+        safe_makedirs(self.tool_working_directory)
+        log.debug('(%s) Working directory for job is: %s',
+                  self.job_id, self.working_directory)
+        if self.app.config.job_script_directory != self.app.config.jobs_directory:
+            self.job_script_directory = self._create_directory(base_dir="scripts")
+
+    def _create_directory( self, base_dir="job_work" ):
         job = self.get_job()
         try:
             self.app.object_store.create(
-                job, base_dir='job_work', dir_only=True, obj_dir=True )
-            self.working_directory = self.app.object_store.get_filename(
-                job, base_dir='job_work', dir_only=True, obj_dir=True )
-
-            # The tool execution is given a working directory beneath the
-            # "job" working directory.
-            self.tool_working_directory = os.path.join(self.working_directory, "working")
-            safe_makedirs(self.tool_working_directory)
-            log.debug( '(%s) Working directory for job is: %s',
-                       self.job_id, self.working_directory )
+                job, base_dir=base_dir, dir_only=True, obj_dir=True )
+            return self.app.object_store.get_filename(
+                job, base_dir=base_dir, dir_only=True, obj_dir=True )
         except ObjectInvalid:
-            raise Exception( '(%s) Unable to create job working directory',
-                             job.id )
+            dir_type = 'job working drectory' if base_dir == "job_work" else 'job script directory'
+            raise Exception( "(%s) Unable to create %s" % (job.id, dir_type) )
 
     def clear_working_directory( self ):
         job = self.get_job()
@@ -964,7 +971,7 @@ class JobWrapper( object ):
         date_str = datetime.datetime.now().strftime( '%Y%m%d-%H%M%S' )
         arc_dir = os.path.join( base, date_str )
         shutil.move( self.working_directory, arc_dir )
-        self._create_working_directory()
+        self._create_working_directories()
         log.debug( '(%s) Previous working directory moved to %s',
                    self.job_id, arc_dir )
 
@@ -1454,6 +1461,9 @@ class JobWrapper( object ):
             galaxy.tools.imp_exp.JobImportHistoryArchiveWrapper( self.app, self.job_id ).cleanup_after_job()
             if delete_files:
                 self.app.object_store.delete(self.get_job(), base_dir='job_work', entire_dir=True, dir_only=True, obj_dir=True)
+                if self.job_script_directory != self.working_directory:
+                    self.app.object_store.delete(self.get_job(), base_dir='scripts', entire_dir=True, dir_only=True,
+                                                 obj_dir=True)
         except:
             log.exception( "Unable to cleanup job %d" % self.job_id )
 
