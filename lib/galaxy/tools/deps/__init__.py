@@ -9,8 +9,8 @@ import os.path
 from collections import OrderedDict
 
 from galaxy.util import (
-    plugin_config,
-    hash_util
+    hash_util,
+    plugin_config
 )
 
 from .resolvers import NullDependency
