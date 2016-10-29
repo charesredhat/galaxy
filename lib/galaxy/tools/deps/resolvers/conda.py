@@ -139,8 +139,8 @@ class CondaDependencyResolver(DependencyResolver, ListableDependencyResolver, In
         # Have installed conda_target and job_directory to send it too.
         # If dependency is for metadata generation, store environment in conda-metadata-env
 
-        if kwds.get('conda_env', False):
-            conda_environment = kwds.get('conda_env')
+        if kwds.get('env_dir', False):
+            conda_environment = kwds.get('env_dir')
         else:
             if kwds.get("metadata", False):
                 conda_env = "conda-metadata-env"
