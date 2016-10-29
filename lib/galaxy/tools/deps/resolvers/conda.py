@@ -85,17 +85,16 @@ class CondaDependencyResolver(DependencyResolver, ListableDependencyResolver, In
             ensure_channels=ensure_channels,
             condarc_override=condarc_override,
             use_path_exec=use_path_exec,
+            copy_dependencies=_string_as_bool(get_option("copy_dependencies"))
         )
         self.ensure_channels = ensure_channels
 
         # Conda operations options (these define how resolution will occur)
         auto_install = _string_as_bool(get_option("auto_install"))
-        copy_dependencies = _string_as_bool(get_option("copy_dependencies"))
         self.auto_init = _string_as_bool(get_option("auto_init"))
         self.conda_context = conda_context
         self.disabled = not galaxy.tools.deps.installable.ensure_installed(conda_context, install_conda, self.auto_init)
         self.auto_install = auto_install
-        self.copy_dependencies = copy_dependencies
         self.verbose_install_check = verbose_install_check
 
     def resolve(self, name, version, type, **kwds):
@@ -138,37 +137,20 @@ class CondaDependencyResolver(DependencyResolver, ListableDependencyResolver, In
 
         # Have installed conda_target and job_directory to send it too.
         # If dependency is for metadata generation, store environment in conda-metadata-env
-
-        if kwds.get('env_dir', False):
-            conda_environment = kwds.get('env_dir')
+        if kwds.get("metadata", False):
+            conda_env = "conda-metadata-env"
         else:
-            if kwds.get("metadata", False):
-                conda_env = "conda-metadata-env"
-            else:
-                conda_env = "conda-env"
-            conda_environment = os.path.join(job_directory, conda_env)
-        env_path, exit_code = build_isolated_environment(
-            conda_target,
-            path=conda_environment,
-            copy=self.copy_dependencies,
-            conda_context=self.conda_context,
+            conda_env = "conda-env"
+        conda_environment = os.path.join(job_directory, conda_env)
+        self.conda_environment = conda_environment
+
+        return CondaDependency(
+            self.conda_context,
+            conda_environment,
+            exact,
+            name,
+            version
         )
-
-        if not exit_code:
-            return CondaDependency(
-                self.conda_context.activate,
-                conda_environment,
-                exact,
-                name,
-                version
-            )
-        else:
-            if len(conda_environment) > 79:
-                # TODO: remove this once conda_build version 2 is released and packages have been rebuilt.
-                raise Exception("Conda dependency failed to build job environment. "
-                                "This is most likely a limitation in conda. "
-                                "You can try to shorten the path to the job_working_directory.")
-            raise Exception("Conda dependency seemingly installed but failed to build job environment.")
 
     def list_dependencies(self):
         for install_target in installed_conda_targets(self.conda_context):
@@ -216,9 +198,11 @@ class CondaDependencyResolver(DependencyResolver, ListableDependencyResolver, In
 class CondaDependency(Dependency):
     dict_collection_visible_keys = Dependency.dict_collection_visible_keys + ['environment_path', 'name', 'version']
     dependency_type = 'conda'
+    cacheable = True
 
-    def __init__(self, activate, environment_path, exact, name=None, version=None):
-        self.activate = activate
+    def __init__(self, conda_context, environment_path, exact, name=None, version=None):
+        self.activate = conda_context.activate
+        self.conda_context = conda_context
         self.environment_path = environment_path
         self._exact = exact
         self._name = name
@@ -236,8 +220,24 @@ class CondaDependency(Dependency):
     def version(self):
         return self._version
 
-    def shell_commands(self, requirement):
-        return """[ "$CONDA_DEFAULT_ENV" = "%s" ] || . %s '%s' 2>&1 """ % (
+    def set_cache_path(self, cache_path):
+        self.environment_path = cache_path
+
+    def shell_commands(self, requirement, cache_path=None):
+        env_path, exit_code = build_isolated_environment(
+            CondaTarget(self.name, self.version),
+            path=self.environment_path,
+            copy=self.conda_context.copy_dependencies,
+            conda_context=self.conda_context,
+        )
+        if exit_code:
+            if len(self.conda_environment) > 79:
+                # TODO: remove this once conda_build version 2 is released and packages have been rebuilt.
+                raise Exception("Conda dependency failed to build job environment. "
+                                "This is most likely a limitation in conda. "
+                                "You can try to shorten the path to the job_working_directory.")
+            raise Exception("Conda dependency seemingly installed but failed to build job environment.")
+        return """[ "$CONDA_DEFAULT_ENV" = "%s" ] || . %s '%s' > conda_activate.log 2>&1 """ % (
             self.environment_path,
             self.activate,
             self.environment_path
