@@ -116,20 +116,7 @@ class CondaDependencyResolver(DependencyResolver, ListableDependencyResolver, In
         )
 
         job_directory = kwds.get("job_directory", None)
-        if job_directory is None:  # Job directory is None when resolve() called by find_dep()
-            if is_installed:
-                return CondaDependency(
-                    False,
-                    os.path.join(self.conda_context.envs_path, conda_target.install_environment),
-                    exact,
-                    name=name,
-                    version=version
-                )
-            else:
-                log.warning("Conda dependency resolver not sent job directory.")
-                return NullDependency(version=version, name=name)
-
-        if not is_installed and self.auto_install:
+        if not is_installed and self.auto_install and job_directory:
             is_installed = self.install_dependency(name=name, version=version, type=type)
 
         if not is_installed:
@@ -141,8 +128,11 @@ class CondaDependencyResolver(DependencyResolver, ListableDependencyResolver, In
             conda_env = "conda-metadata-env"
         else:
             conda_env = "conda-env"
-        conda_environment = os.path.join(job_directory, conda_env)
-        self.conda_environment = conda_environment
+
+        if job_directory:
+            conda_environment = os.path.join(job_directory, conda_env)
+        else:
+            conda_environment = None
 
         return CondaDependency(
             self.conda_context,
