@@ -200,3 +200,20 @@ class CachedDependencyManager(DependencyManager):
         """
         req_hashes = self.hash_requirements(resolved_dependencies)
         return os.path.join(self.extra_config['tool_dependency_cache_dir'], req_hashes)
+
+    def get_cached_commands(self, requirements, **kwargs):
+        """
+        Return commands for activating cached env if it exists
+        :param requirements_hash:
+        :return: list of commands
+        """
+        if not requirements:  # if tool has no requirements
+            return []
+        hashed_requirements_dir = self.get_hashed_requirements_path(requirements)
+        if not os.path.exists(os.path.join(hashed_requirements_dir)):
+            return []
+        else:
+            if 'tool_instance' in kwargs:
+                dependencies = json.load(open(os.path.join(hashed_requirements_dir, 'packages.json')))
+                kwargs['tool_instance'].dependencies = dependencies
+            return [line.strip() for line in open(os.path.join(hashed_requirements_dir, 'dep_commands.sh'))]
