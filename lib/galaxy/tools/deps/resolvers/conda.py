@@ -135,23 +135,13 @@ class CondaDependencyResolver(DependencyResolver, ListableDependencyResolver, In
         else:
             conda_environment = None
 
-        conda_environment = os.path.join(job_directory, conda_env)
-        env_path, exit_code = build_isolated_environment(
-            conda_target,
-            path=conda_environment,
-            copy=self.copy_dependencies,
-            conda_context=self.conda_context,
+        return CondaDependency(
+            self.conda_context,
+            conda_environment,
+            exact,
+            name,
+            version
         )
-        if not exit_code:
-            return CondaDependency(
-                self.conda_context.activate,
-                conda_environment,
-                exact,
-                name,
-                version
-            )
-        else:
-            return NullDependency(version=version, name=name)
 
     def list_dependencies(self):
         for install_target in installed_conda_targets(self.conda_context):
