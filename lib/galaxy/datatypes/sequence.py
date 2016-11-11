@@ -15,6 +15,7 @@ import bx.align.maf
 
 from galaxy import util
 from galaxy.datatypes import metadata
+from galaxy.datatypes.binary import Binary
 from galaxy.datatypes.metadata import MetadataElement
 from galaxy.datatypes.sniff import get_headers
 from galaxy.util import nice_size
@@ -553,8 +554,8 @@ class csFasta( Sequence ):
         return Sequence.set_meta( self, dataset, **kwd )
 
 
-class Fastq ( Sequence ):
-    """Class representing a generic FASTQ sequence"""
+class BaseFastq ( Sequence ):
+    """Base class for FastQ sequences"""
     edam_format = "format_1930"
     file_ext = "fastq"
 
@@ -571,7 +572,12 @@ class Fastq ( Sequence ):
         data_lines = 0
         sequences = 0
         seq_counter = 0     # blocks should be 4 lines long
-        for line in open( dataset.file_name ):
+        compressed = is_gzip(dataset.file_name)
+        if compressed:
+            in_file = gzip.GzipFile(dataset.file_name)
+        else:
+            in_file = open(dataset.file_name)
+        for line in in_file:
             line = line.strip()
             if line and line.startswith( '#' ) and not data_lines:
                 # We don't count comment lines for sequence data types
@@ -606,6 +612,9 @@ class Fastq ( Sequence ):
         >>> Fastq().sniff( fname )
         True
         """
+        compressed = is_gzip(filename)
+        if compressed and not isinstance(self, Binary):
+            return False
         headers = get_headers( filename, None )
         bases_regexp = re.compile( "^[NGTAC]*" )
         # check that first block looks like a fastq block
@@ -668,6 +677,12 @@ class Fastq ( Sequence ):
     process_split_file = staticmethod(process_split_file)
 
 
+class Fastq( BaseFastq ):
+    """Class representing a generic FASTQ sequence"""
+    edam_format = "format_1930"
+    file_ext = "fastq"
+
+
 class FastqSanger( Fastq ):
     """Class representing a FASTQ sequence ( the Sanger variant )"""
     edam_format = "format_1932"
@@ -689,6 +704,40 @@ class FastqIllumina( Fastq ):
 class FastqCSSanger( Fastq ):
     """Class representing a Color Space FASTQ sequence ( e.g a SOLiD variant )"""
     file_ext = "fastqcssanger"
+
+
+class FastqGz ( BaseFastq, Binary ):
+    """Class representing a generic compressed FASTQ sequence"""
+    edam_format = "format_1930"
+    file_ext = "fastq.gz"
+Binary.register_sniffable_binary_format("fastq.gz", "fastq.gz", FastqGz)
+
+
+class FastqSangerGz( FastqGz ):
+    """Class representing a compressed FASTQ sequence ( the Sanger variant )"""
+    edam_format = "format_1932"
+    file_ext = "fastqsanger.gz"
+Binary.register_sniffable_binary_format("fastqsanger.gz", "fastqsanger.gz", FastqSangerGz)
+
+
+class FastqSolexaGz( FastqGz ):
+    """Class representing a compressed FASTQ sequence ( the Solexa variant )"""
+    edam_format = "format_1933"
+    file_ext = "fastqsolexa.gz"
+Binary.register_sniffable_binary_format("fastqsolexa.gz", "fastqsolexa.gz", FastqSolexaGz)
+
+
+class FastqIlluminaGz( FastqGz ):
+    """Class representing a compressed FASTQ sequence ( the Illumina 1.3+ variant )"""
+    edam_format = "format_1931"
+    file_ext = "fastqillumina.gz"
+Binary.register_sniffable_binary_format("fastqillumina.gz", "fastqillumina.gz", FastqIlluminaGz)
+
+
+class FastqCSSangerGz( FastqGz ):
+    """Class representing a Color Space compressed FASTQ sequence ( e.g a SOLiD variant )"""
+    file_ext = "fastqcssanger.gz"
+Binary.register_sniffable_binary_format("fastqcssanger.gz", "fastqcssanger.gz", FastqCSSangerGz)
 
 
 class Maf( Alignment ):
