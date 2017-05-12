@@ -30,17 +30,21 @@ def redirect_aware_commmunicate(p, sys=_sys):
     return out, err
 
 
-def shell(cmds, env=None, **kwds):
+def shell(cmds, env=None, log=None, **kwds):
     """Run shell commands with `shell_process` and wait."""
     sys = kwds.get("sys", _sys)
     assert sys is not None
     p = shell_process(cmds, env, **kwds)
     if redirecting_io(sys=sys):
         redirect_aware_commmunicate(p, sys=sys)
-        exit = p.returncode
-        return exit
     else:
-        return p.wait()
+        p.wait()
+    exit = p.returncode
+    if exit != 0:
+        stdout, stderr = p.communicate()
+        if log:
+            log.exception(CommandLineException(cmds, stdout, stderr, p.returncode))
+    return exit
 
 
 def shell_process(cmds, env=None, **kwds):
@@ -53,9 +57,9 @@ def shell_process(cmds, env=None, **kwds):
     popen_kwds = dict(
         shell=True,
     )
-    if kwds.get("stdout", None) is None and redirecting_io(sys=sys):
+    if kwds.get("stdout", None) is None and (redirecting_io(sys=sys) or kwds.pop('no_redirect', False)):
         popen_kwds["stdout"] = subprocess.PIPE
-    if kwds.get("stderr", None) is None and redirecting_io(sys=sys):
+    if kwds.get("stderr", None) is None and (redirecting_io(sys=sys) or kwds.pop('no_redirect', False)):
         popen_kwds["stderr"] = subprocess.PIPE
 
     popen_kwds.update(**kwds)

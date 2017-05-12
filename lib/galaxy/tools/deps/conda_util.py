@@ -220,11 +220,9 @@ class CondaContext(installable.InstallableContext):
         if condarc_override:
             env["CONDARC"] = condarc_override
         log.debug("Executing command: %s", command)
-        try:
-            return self.shell_exec(command, env=env)
-        except commands.CommandLineException as e:
-            log.warning(e)
-            return e.returncode
+        return_code = self.shell_exec(command, env=env, log=log, no_redirect=True)
+        if return_code != 0:
+            return return_code
 
     def exec_create(self, args):
         create_base_args = [
