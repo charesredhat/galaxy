@@ -455,11 +455,16 @@ class WorkflowsAPIController(BaseAPIController, UsesStoredWorkflowMixin, UsesAnn
                         trans.get_user().stored_workflow_menu_entries.remove(entries[trans.security.decode_id(id)])
 
             try:
-                workflow, errors = self.workflow_contents_manager.update_workflow_from_dict(
-                    trans,
-                    stored_workflow,
-                    payload['workflow'],
-                )
+                workflow = payload['workflow']
+                if 'steps' in workflow:
+                    workflow, errors = self.workflow_contents_manager.update_workflow_from_dict(
+                        trans,
+                        stored_workflow,
+                        payload['workflow'],
+                    )
+                self.get_tag_handler(trans).delete_item_tags(trans.user, stored_workflow)
+                self.get_tag_handler(trans).apply_item_tags(trans.user, stored_workflow, ",".join(workflow.get('tags', '')))
+                trans.sa_session.flush()
             except workflows.MissingToolsException:
                 raise exceptions.MessageException("This workflow contains missing tools. It cannot be saved until they have been removed from the workflow or installed.")
         else:

@@ -1199,7 +1199,78 @@ class UsesVisualizationMixin(UsesLibraryMixinItems):
         return return_message
 
 
-class UsesStoredWorkflowMixin(SharableItemSecurityMixin, UsesAnnotations):
+class UsesTagsMixin(SharableItemSecurityMixin):
+
+    def get_tag_handler(self, trans):
+        return trans.app.tag_handler
+
+    def _get_user_tags(self, trans, item_class_name, id):
+        user = trans.user
+        tagged_item = self._get_tagged_item(trans, item_class_name, id)
+        return [tag for tag in tagged_item.tags if tag.user == user]
+
+    def _get_tagged_item(self, trans, item_class_name, id, check_ownership=True):
+        tagged_item = self.get_object(trans, id, item_class_name, check_ownership=check_ownership, check_accessible=True)
+        return tagged_item
+
+    def _remove_items_tag(self, trans, item_class_name, id, tag_name):
+        """Remove a tag from an item."""
+        user = trans.user
+        tagged_item = self._get_tagged_item(trans, item_class_name, id)
+        deleted = tagged_item and self.get_tag_handler(trans).remove_item_tag(trans, user, tagged_item, tag_name)
+        trans.sa_session.flush()
+        return deleted
+
+    def _apply_item_tag(self, trans, item_class_name, id, tag_name, tag_value=None):
+        user = trans.user
+        tagged_item = self._get_tagged_item(trans, item_class_name, id)
+        tag_assoc = self.get_tag_handler(trans).apply_item_tag(user, tagged_item, tag_name, tag_value)
+        trans.sa_session.flush()
+        return tag_assoc
+
+    def _get_item_tag_assoc(self, trans, item_class_name, id, tag_name):
+        user = trans.user
+        tagged_item = self._get_tagged_item(trans, item_class_name, id)
+        log.debug("In get_item_tag_assoc with tagged_item %s" % tagged_item)
+        return self.get_tag_handler(trans)._get_item_tag_assoc(user, tagged_item, tag_name)
+
+    def set_tags_from_list(self, trans, item, new_tags_list, user=None):
+        tags_manager = tags.GalaxyTagManager(trans.app.model.context)
+        return tags_manager.set_tags_from_list(user, item, new_tags_list)
+
+    def get_user_tags_used(self, trans, user=None):
+        """
+        Return a list of distinct 'user_tname:user_value' strings that the
+        given user has used.
+
+        user defaults to trans.user.
+        Returns an empty list if no user is given and trans.user is anonymous.
+        """
+        # TODO: for lack of a UsesUserMixin - placing this here - maybe into UsesTags, tho
+        user = user or trans.user
+        if not user:
+            return []
+
+        # get all the taggable model TagAssociations
+        tag_models = [v.tag_assoc_class for v in trans.app.tag_handler.item_tag_assoc_info.values()]
+        # create a union of subqueries for each for this user - getting only the tname and user_value
+        all_tags_query = None
+        for tag_model in tag_models:
+            subq = (trans.sa_session.query(tag_model.user_tname, tag_model.user_value)
+                    .filter(tag_model.user == trans.user))
+            all_tags_query = subq if all_tags_query is None else all_tags_query.union(subq)
+
+        # if nothing init'd the query, bail
+        if all_tags_query is None:
+            return []
+
+        # boil the tag tuples down into a sorted list of DISTINCT name:val strings
+        tags = all_tags_query.distinct().all()
+        tags = [((name + ':' + val) if val else name) for name, val in tags]
+        return sorted(tags)
+
+
+class UsesStoredWorkflowMixin(UsesTagsMixin, UsesAnnotations):
     """ Mixin for controllers that use StoredWorkflow objects. """
 
     def get_stored_workflow(self, trans, id, check_ownership=True, check_accessible=False):
@@ -2163,75 +2234,6 @@ class UsesQuotaMixin(object):
         return self.get_object(trans, id, 'Quota', check_ownership=False, check_accessible=False, deleted=deleted)
 
 
-class UsesTagsMixin(SharableItemSecurityMixin):
-
-    def get_tag_handler(self, trans):
-        return trans.app.tag_handler
-
-    def _get_user_tags(self, trans, item_class_name, id):
-        user = trans.user
-        tagged_item = self._get_tagged_item(trans, item_class_name, id)
-        return [tag for tag in tagged_item.tags if tag.user == user]
-
-    def _get_tagged_item(self, trans, item_class_name, id, check_ownership=True):
-        tagged_item = self.get_object(trans, id, item_class_name, check_ownership=check_ownership, check_accessible=True)
-        return tagged_item
-
-    def _remove_items_tag(self, trans, item_class_name, id, tag_name):
-        """Remove a tag from an item."""
-        user = trans.user
-        tagged_item = self._get_tagged_item(trans, item_class_name, id)
-        deleted = tagged_item and self.get_tag_handler(trans).remove_item_tag(trans, user, tagged_item, tag_name)
-        trans.sa_session.flush()
-        return deleted
-
-    def _apply_item_tag(self, trans, item_class_name, id, tag_name, tag_value=None):
-        user = trans.user
-        tagged_item = self._get_tagged_item(trans, item_class_name, id)
-        tag_assoc = self.get_tag_handler(trans).apply_item_tag(user, tagged_item, tag_name, tag_value)
-        trans.sa_session.flush()
-        return tag_assoc
-
-    def _get_item_tag_assoc(self, trans, item_class_name, id, tag_name):
-        user = trans.user
-        tagged_item = self._get_tagged_item(trans, item_class_name, id)
-        log.debug("In get_item_tag_assoc with tagged_item %s" % tagged_item)
-        return self.get_tag_handler(trans)._get_item_tag_assoc(user, tagged_item, tag_name)
-
-    def set_tags_from_list(self, trans, item, new_tags_list, user=None):
-        tags_manager = tags.GalaxyTagManager(trans.app.model.context)
-        return tags_manager.set_tags_from_list(user, item, new_tags_list)
-
-    def get_user_tags_used(self, trans, user=None):
-        """
-        Return a list of distinct 'user_tname:user_value' strings that the
-        given user has used.
-
-        user defaults to trans.user.
-        Returns an empty list if no user is given and trans.user is anonymous.
-        """
-        # TODO: for lack of a UsesUserMixin - placing this here - maybe into UsesTags, tho
-        user = user or trans.user
-        if not user:
-            return []
-
-        # get all the taggable model TagAssociations
-        tag_models = [v.tag_assoc_class for v in trans.app.tag_handler.item_tag_assoc_info.values()]
-        # create a union of subqueries for each for this user - getting only the tname and user_value
-        all_tags_query = None
-        for tag_model in tag_models:
-            subq = (trans.sa_session.query(tag_model.user_tname, tag_model.user_value)
-                    .filter(tag_model.user == trans.user))
-            all_tags_query = subq if all_tags_query is None else all_tags_query.union(subq)
-
-        # if nothing init'd the query, bail
-        if all_tags_query is None:
-            return []
-
-        # boil the tag tuples down into a sorted list of DISTINCT name:val strings
-        tags = all_tags_query.distinct().all()
-        tags = [((name + ':' + val) if val else name) for name, val in tags]
-        return sorted(tags)
 
 
 class UsesExtendedMetadataMixin(SharableItemSecurityMixin):
