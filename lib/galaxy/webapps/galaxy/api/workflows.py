@@ -2,6 +2,7 @@
 API operations for Workflows
 """
 from __future__ import absolute_import
+from profilehooks import profile
 
 import logging
 
@@ -189,6 +190,7 @@ class WorkflowsAPIController(BaseAPIController, UsesStoredWorkflowMixin, UsesAnn
             return workflows
         return rval
 
+    @profile
     @expose_api
     def show(self, trans, id, **kwd):
         """
@@ -201,10 +203,9 @@ class WorkflowsAPIController(BaseAPIController, UsesStoredWorkflowMixin, UsesAnn
             if trans.sa_session.query(trans.app.model.StoredWorkflowUserShareAssociation).filter_by(user=trans.user, stored_workflow=stored_workflow).count() == 0:
                 message = "Workflow is neither importable, nor owned by or shared with current user"
                 raise exceptions.ItemAccessibilityException(message)
+        style = kwd.get('style', 'instance')
         if kwd.get("legacy", False):
             style = "legacy"
-        else:
-            style = "instance"
         return self.workflow_contents_manager.workflow_to_dict(trans, stored_workflow, style=style)
 
     @expose_api
@@ -436,35 +437,42 @@ class WorkflowsAPIController(BaseAPIController, UsesStoredWorkflowMixin, UsesAnn
         :returns:   serialized version of the workflow
         """
         stored_workflow = self.__get_stored_workflow(trans, id)
-        if 'workflow' in payload:
+        workflow = payload.get('workflow')
+        if workflow:
             stored_workflow.name = sanitize_html(payload['name']) if ('name' in payload) else stored_workflow.name
 
             if 'annotation' in payload:
                 newAnnotation = sanitize_html(payload['annotation'])
                 self.add_item_annotation(trans.sa_session, trans.get_user(), stored_workflow, newAnnotation)
 
-            if 'menu_entry' in payload:
-                if payload['menu_entry']:
+            if 'menu_entry' in payload or 'show_in_tool_panel' in workflow:
+                menu_entry = payload.get('menu_entry')  or workflow.get('show_in_tool_panel')
+                if menu_entry:
                     menuEntry = model.StoredWorkflowMenuEntry()
                     menuEntry.stored_workflow = stored_workflow
                     trans.get_user().stored_workflow_menu_entries.append(menuEntry)
+                    trans.sa_session.flush()
                 else:
                     # remove if in list
                     entries = {x.stored_workflow_id: x for x in trans.get_user().stored_workflow_menu_entries}
                     if (trans.security.decode_id(id) in entries):
                         trans.get_user().stored_workflow_menu_entries.remove(entries[trans.security.decode_id(id)])
 
+            # set tags
+            self.get_tag_handler(trans).delete_item_tags(trans.user, stored_workflow)
+            self.get_tag_handler(trans).apply_item_tags(trans.user, stored_workflow, ",".join(workflow.get('tags', '')))
+            trans.sa_session.flush()
             try:
-                workflow = payload['workflow']
                 if 'steps' in workflow:
                     workflow, errors = self.workflow_contents_manager.update_workflow_from_dict(
                         trans,
                         stored_workflow,
                         payload['workflow'],
                     )
-                self.get_tag_handler(trans).delete_item_tags(trans.user, stored_workflow)
-                self.get_tag_handler(trans).apply_item_tags(trans.user, stored_workflow, ",".join(workflow.get('tags', '')))
-                trans.sa_session.flush()
+                else:
+                    # We only adjusted tags and menu entry
+                    return payload
+
             except workflows.MissingToolsException:
                 raise exceptions.MessageException("This workflow contains missing tools. It cannot be saved until they have been removed from the workflow or installed.")
         else:

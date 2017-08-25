@@ -105,7 +105,7 @@ def populate_tool_payload(payload=None, tool=None):
     payload['title'] = 'Need help with "%s" tool' % (tool.name)
     tool_url = None
     if tool.tool_shed_repository:
-        tool_url = tool.tool_shed_repository.get_sharable_url(tool.app)
+        tool_url = tool.sharable_url
         if tool_url:
             tool_url = '</br>ToolShed URL: <a href="%s">%s</a>' % (tool_url, tool_url)
     if not tool_url:

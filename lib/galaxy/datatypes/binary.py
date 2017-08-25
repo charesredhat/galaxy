@@ -12,7 +12,10 @@ import tempfile
 import zipfile
 from json import dumps
 
-import pysam
+try:
+    import pysam
+except Exception:
+    pysam = None
 from bx.seq.twobit import TWOBIT_MAGIC_NUMBER, TWOBIT_MAGIC_NUMBER_SWAP, TWOBIT_MAGIC_SIZE
 
 from galaxy import util

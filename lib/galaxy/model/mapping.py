@@ -2239,40 +2239,47 @@ mapper(model.Workflow, model.Workflow.table, properties=dict(
         primaryjoin=((model.Workflow.table.c.id == model.WorkflowStep.table.c.workflow_id)),
         order_by=asc(model.WorkflowStep.table.c.order_index),
         cascade="all, delete-orphan",
-        lazy=False)
+        lazy='joined')
 ))
 
 mapper(model.WorkflowStep, model.WorkflowStep.table, properties=dict(
     subworkflow=relation(model.Workflow,
         primaryjoin=((model.Workflow.table.c.id == model.WorkflowStep.table.c.subworkflow_id)),
-        backref="parent_workflow_steps"),
+        backref="parent_workflow_steps",
+        lazy='joined'),
     tags=relation(model.WorkflowStepTagAssociation,
         order_by=model.WorkflowStepTagAssociation.table.c.id,
-        backref="workflow_steps"),
+        backref="workflow_steps",
+        lazy='joined'),
     annotations=relation(model.WorkflowStepAnnotationAssociation,
         order_by=model.WorkflowStepAnnotationAssociation.table.c.id,
-        backref="workflow_steps")
+        backref="workflow_steps",
+        lazy='joined')
 ))
 
 mapper(model.WorkflowOutput, model.WorkflowOutput.table, properties=dict(
     workflow_step=relation(model.WorkflowStep,
         backref='workflow_outputs',
-        primaryjoin=(model.WorkflowStep.table.c.id == model.WorkflowOutput.table.c.workflow_step_id))
+        primaryjoin=(model.WorkflowStep.table.c.id == model.WorkflowOutput.table.c.workflow_step_id),
+                           lazy='joined')
 ))
 
 mapper(model.WorkflowStepConnection, model.WorkflowStepConnection.table, properties=dict(
     input_step=relation(model.WorkflowStep,
         backref="input_connections",
         cascade="all",
-        primaryjoin=(model.WorkflowStepConnection.table.c.input_step_id == model.WorkflowStep.table.c.id)),
+        primaryjoin=(model.WorkflowStepConnection.table.c.input_step_id == model.WorkflowStep.table.c.id),
+                        lazy='joined'),
     input_subworkflow_step=relation(model.WorkflowStep,
         backref=backref("parent_workflow_input_connections", uselist=True),
         primaryjoin=(model.WorkflowStepConnection.table.c.input_subworkflow_step_id == model.WorkflowStep.table.c.id),
+lazy='joined'
     ),
     output_step=relation(model.WorkflowStep,
         backref="output_connections",
         cascade="all",
-        primaryjoin=(model.WorkflowStepConnection.table.c.output_step_id == model.WorkflowStep.table.c.id)),
+        primaryjoin=(model.WorkflowStepConnection.table.c.output_step_id == model.WorkflowStep.table.c.id),
+                         lazy='joined'),
 ))
 
 
@@ -2283,11 +2290,12 @@ mapper(model.StoredWorkflow, model.StoredWorkflow.table, properties=dict(
     workflows=relation(model.Workflow,
         backref='stored_workflow',
         cascade="all, delete-orphan",
-        primaryjoin=(model.StoredWorkflow.table.c.id == model.Workflow.table.c.stored_workflow_id)),
+        primaryjoin=(model.StoredWorkflow.table.c.id == model.Workflow.table.c.stored_workflow_id),
+                       lazy='joined'),
     latest_workflow=relation(model.Workflow,
         post_update=True,
         primaryjoin=(model.StoredWorkflow.table.c.latest_workflow_id == model.Workflow.table.c.id),
-        lazy=False),
+        lazy='joined'),
     tags=relation(model.StoredWorkflowTagAssociation,
         order_by=model.StoredWorkflowTagAssociation.table.c.id,
         backref="stored_workflows"),

@@ -1,4 +1,7 @@
-from Crypto.Cipher import Blowfish
+try:
+    from Crypto.Cipher import Blowfish
+except Exception:
+    Blowfish = None
 
 
 def encode_dataset_user(trans, dataset, user):

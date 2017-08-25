@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 
 from six import string_types
+import sqltap
 
 from collections import namedtuple
 import logging
@@ -8,6 +9,7 @@ import json
 import uuid
 
 from sqlalchemy import and_
+from sqlalchemy.orm import eagerload, joinedload, subqueryload
 
 from galaxy import model
 from galaxy import util
@@ -25,6 +27,8 @@ from galaxy.tools.parameters.basic import DataToolParameter, DataCollectionToolP
 from galaxy.tools.parameters import visit_input_values, params_to_incoming
 from galaxy.jobs.actions.post import ActionBox
 from galaxy.web import url_for
+
+from profilehooks import profile
 
 log = logging.getLogger(__name__)
 
@@ -48,13 +52,13 @@ class WorkflowsManager(object):
             stored_workflow = trans.sa_session.query(trans.app.model.StoredWorkflow).filter(and_(
                 trans.app.model.StoredWorkflow.latest_workflow_id == trans.app.model.Workflow.id,
                 trans.app.model.Workflow.uuid == workflow_uuid
-            )).first()
+            )).options(subqueryload('latest_workflow').joinedload('steps').joinedload('*')).first()
             if stored_workflow is None:
                 raise exceptions.ObjectNotFound("Workflow not found: %s" % workflow_id)
         else:
             workflow_id = decode_id(self.app, workflow_id)
-            query = trans.sa_session.query(trans.app.model.StoredWorkflow)
-            stored_workflow = query.get(workflow_id)
+            stored_workflow = trans.sa_session.query(trans.app.model.StoredWorkflow).filter(trans.app.model.StoredWorkflow.id == workflow_id).options(subqueryload('workflows').joinedload('steps').joinedload('*')).first()
+            # stored_workflow = query.get(workflow_id)
         if stored_workflow is None:
             raise exceptions.ObjectNotFound("No such workflow found.")
         return stored_workflow
@@ -256,11 +260,12 @@ class WorkflowContentsManager(UsesAnnotations):
     def update_workflow_from_dict(self, trans, stored_workflow, workflow_data):
         # Put parameters in workflow mode
         trans.workflow_building_mode = True
+        workflow_name = workflow_data.get('name')
 
         workflow, missing_tool_tups = self._workflow_from_dict(
             trans,
             workflow_data,
-            name=stored_workflow.name,
+            name=workflow_name,
         )
 
         if missing_tool_tups:
@@ -272,6 +277,8 @@ class WorkflowContentsManager(UsesAnnotations):
         # Connect up
         workflow.stored_workflow = stored_workflow
         stored_workflow.latest_workflow = workflow
+        if stored_workflow.name != workflow.name:
+            stored_workflow.name = workflow.name
         # Persist
         trans.sa_session.flush()
         # Return something informative
@@ -323,6 +330,7 @@ class WorkflowContentsManager(UsesAnnotations):
 
         return workflow, missing_tool_tups
 
+    #@profile
     def workflow_to_dict(self, trans, stored, style="export"):
         """ Export the workflow contents to a dictionary ready for JSON-ification and to be
         sent out via API for instance. There are three styles of export allowed 'export', 'instance', and
@@ -359,6 +367,7 @@ class WorkflowContentsManager(UsesAnnotations):
         missing_tools = []
         errors = {}
         for step in workflow.steps:
+            pass
             try:
                 module_injector.inject(step, steps=workflow.steps)
             except exceptions.ToolMissingException:
@@ -425,6 +434,7 @@ class WorkflowContentsManager(UsesAnnotations):
         }
 
     def _workflow_to_dict_editor(self, trans, stored):
+        # profiler = sqltap.start()
         workflow = stored.latest_workflow
         # Pack workflow data into a dictionary and return
         data = {}
@@ -443,13 +453,14 @@ class WorkflowContentsManager(UsesAnnotations):
             upgrade_message = module.check_and_update_state()
             if upgrade_message:
                 data['upgrade_messages'][step.order_index] = upgrade_message
-            if (hasattr(module, "version_changes")) and (module.version_changes):
-                if step.order_index in data['upgrade_messages']:
-                    data['upgrade_messages'][step.order_index][module.tool.name] = "\n".join(module.version_changes)
-                else:
-                    data['upgrade_messages'][step.order_index] = {module.tool.name: "\n".join(module.version_changes)}
+            # if (hasattr(module, "version_changes")) and (module.version_changes):
+            #     if step.order_index in data['upgrade_messages']:
+            #         data['upgrade_messages'][step.order_index][module.tool.name] = "\n".join(module.version_changes)
+            #     else:
+            #         data['upgrade_messages'][step.order_index] = {module.tool.name: "\n".join(module.version_changes)}
             # Get user annotation.
-            step_annotation = self.get_item_annotation_obj(trans.sa_session, trans.user, step)
+            # step_annotation = self.get_item_annotation_obj(trans.sa_session, trans.user, step)
+            step_annotation = ''
             annotation_str = ""
             if step_annotation:
                 annotation_str = step_annotation.annotation
@@ -537,6 +548,8 @@ class WorkflowContentsManager(UsesAnnotations):
             step_dict['position'] = step.position
             # Add to return value
             data['steps'][step.order_index] = step_dict
+        # statistics = profiler.collect()
+        # sqltap.report(statistics, "/Users/mvandenb/src/galaxy/%s.html" % stored.id, report_format="html")
         return data
 
     def _workflow_to_dict_export(self, trans, stored=None, workflow=None):
@@ -594,13 +607,12 @@ class WorkflowContentsManager(UsesAnnotations):
             }
             # Add tool shed repository information and post-job actions to step dict.
             if module.type == 'tool':
-                if module.tool.tool_shed_repository:
-                    tsr = module.tool.tool_shed_repository
+                if module.tool.tool_shed:
                     step_dict["tool_shed_repository"] = {
-                        'name': tsr.name,
-                        'owner': tsr.owner,
-                        'changeset_revision': tsr.changeset_revision,
-                        'tool_shed': tsr.tool_shed
+                        'name': module.tool.repository_name,
+                        'owner': module.tool.repository_owner,
+                        'changeset_revision': module.tool.changeset_revision,
+                        'tool_shed': module.tool.tool_shed
                     }
                 pja_dict = {}
                 for pja in step.post_job_actions:
@@ -758,7 +770,7 @@ class WorkflowContentsManager(UsesAnnotations):
                 del step_dict['tool_id']
                 del step_dict['tool_version']
                 del step_dict['tool_inputs']
-                step_dict['workflow_id'] = encode(step.subworkflow.id)
+                step_dict['content_id'] = encode(step.subworkflow.id)
 
             for conn in step.input_connections:
                 step_id = step.id if legacy else step.order_index
@@ -944,7 +956,7 @@ class WorkflowContentsManager(UsesAnnotations):
         """
         if not module.label and module.type in ['data_input', 'data_collection_input']:
             new_state = safe_loads(state)
-            default_label = new_state.get('name')
+            default_label = new_state.get('name') if new_state else module.name
             if str(default_label).lower() not in ['input dataset', 'input dataset collection']:
                 step.label = module.label = default_label
 
