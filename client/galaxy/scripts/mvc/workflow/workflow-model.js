@@ -24,6 +24,10 @@ var WorkflowItem = Backbone.Model.extend( baseMVC.LoggableMixin ).extend({
     return {workflow : this.attributes};
     },
 
+    download: function() {
+        return $.getJSON(this.urlRoot + this.model.id + '/download')
+    },
+
     initialize: function() {
         console.log("Initialize Workflow Model");
     },
