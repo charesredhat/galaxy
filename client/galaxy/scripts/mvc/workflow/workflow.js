@@ -154,17 +154,20 @@ define( [ 'utils/utils', 'mvc/ui/ui-misc', "mvc/tag", "mvc/workflow/workflow-mod
             var files = e.dataTransfer.files;
             var self = this;
             for (var i = 0, f; f = files[i]; i++) {
+                self.readWorkflowFiles(f);
+            }
+
+        },
+
+        readWorkflowFiles: function(f) {
+                var self = this;
                 var reader = new FileReader();
                 reader.onload = function(theFile) {
                     var wf_json = JSON.parse(reader.result);
                     self.collection.create(wf_json, { at: 0, wait: true});
-                    console.log(self.collection);
-                    // self.collection.sort();
-                    // self.render();
                 };
-                reader.readAsText(f);
-            }
-        },
+                reader.readAsText(f, 'utf-8');
+            },
 
         render: function() {
             var self = this,
