@@ -48,16 +48,17 @@ class WorkflowsManager(object):
         if util.is_uuid(workflow_id):
             # see if they have passed in the UUID for a workflow that is attached to a stored workflow
             workflow_uuid = uuid.UUID(workflow_id)
-            stored_workflow = trans.sa_session.query(trans.app.model.StoredWorkflow).filter(and_(
+            workflow_query = trans.sa_session.query(trans.app.model.StoredWorkflow).filter(and_(
                 trans.app.model.StoredWorkflow.latest_workflow_id == trans.app.model.Workflow.id,
                 trans.app.model.Workflow.uuid == workflow_uuid
-            )).options(subqueryload('latest_workflow').joinedload('steps').joinedload('*')).first()
-            if stored_workflow is None:
-                raise exceptions.ObjectNotFound("Workflow not found: %s" % workflow_id)
+            ))
         else:
             workflow_id = decode_id(self.app, workflow_id)
-            stored_workflow = trans.sa_session.query(trans.app.model.StoredWorkflow).filter(trans.app.model.StoredWorkflow.id == workflow_id).options(subqueryload('workflows').joinedload('steps').joinedload('*')).first()
-            # stored_workflow = query.get(workflow_id)
+            workflow_query = trans.sa_session.query(trans.app.model.StoredWorkflow).\
+                filter(trans.app.model.StoredWorkflow.id == workflow_id)
+        stored_workflow = workflow_query.options(joinedload('annotations'),
+                                                 joinedload('tags'),
+                                                 subqueryload('workflows').joinedload('steps').joinedload('*')).first()
         if stored_workflow is None:
             raise exceptions.ObjectNotFound("No such workflow found.")
         return stored_workflow
