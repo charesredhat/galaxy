@@ -21,7 +21,6 @@ define( [ 'utils/utils', 'mvc/ui/ui-misc', "mvc/tag", "mvc/workflow/workflow-mod
         tagName: 'tr', // name of (orphan) root tag in this.el
         initialize: function(){
             _.bindAll(this, 'render', 'render_row', 'render_tag_editor', '_templateActions', 'model_remove'); // every function that uses 'this' as the current object should be in here
-            // console.log(this);
         },
 
         events: {
@@ -38,10 +37,11 @@ define( [ 'utils/utils', 'mvc/ui/ui-misc', "mvc/tag", "mvc/workflow/workflow-mod
         show_in_tool_panel: function(){
             this.model.set('show_in_tool_panel', !this.model.get('show_in_tool_panel'));
             this.model.save();
+            // This reloads the whole page, so that the workflow appears in the tool panel.
+            window.location = Galaxy.root + 'workflow';
         },
 
         model_remove: function(){
-            // console.log(this.model);
             if (confirm( "Are you sure you want to delete workflow '" + this.model.get('name') + "'?" )) {
                 this.model.destroy();
                 this.remove();
@@ -81,7 +81,6 @@ define( [ 'utils/utils', 'mvc/ui/ui-misc', "mvc/tag", "mvc/workflow/workflow-mod
             tag_editor = new TAGS.WorkflowTagsEditor({
             model           : this.model,
             el              : $.find( '.' + this.model.id + '.tags-display' )});
-
             tag_editor.toggle( true );
             tag_editor.render();
         },
@@ -121,10 +120,8 @@ define( [ 'utils/utils', 'mvc/ui/ui-misc', "mvc/tag", "mvc/workflow/workflow-mod
             this.collection = new WORKFLOWS.WorkflowCollection();
             // this.collection.comparator = 'number_of_steps';
             // this.collection.on('sort', this.render, this);
-            _.bindAll(this, 'prependItem');
             this.collection.bind('add', this.appendItem); // collection event binder
             this.collection.on('sync', this.render, this);  // hack to call
-            //this.render();
         },
 
         events: {
@@ -137,6 +134,7 @@ define( [ 'utils/utils', 'mvc/ui/ui-misc', "mvc/tag", "mvc/workflow/workflow-mod
         },
 
         highlightDropZone: function() {
+            this.$el.css( "overflow", "inherit" );
             console.log('Dropzone')
         },
 
@@ -149,6 +147,7 @@ define( [ 'utils/utils', 'mvc/ui/ui-misc', "mvc/tag", "mvc/workflow/workflow-mod
         },
 
         drop: function(e) {
+            // TODO: check that file is valid galaxy workflow
             e.preventDefault();
             console.log(e);
             var files = e.dataTransfer.files;
@@ -156,7 +155,6 @@ define( [ 'utils/utils', 'mvc/ui/ui-misc', "mvc/tag", "mvc/workflow/workflow-mod
             for (var i = 0, f; f = files[i]; i++) {
                 self.readWorkflowFiles(f);
             }
-
         },
 
         readWorkflowFiles: function(f) {
@@ -172,41 +170,19 @@ define( [ 'utils/utils', 'mvc/ui/ui-misc', "mvc/tag", "mvc/workflow/workflow-mod
         render: function() {
             var self = this,
                 min_query_length = 3;
-                var $el_workflow;
                 // Add workflow header
                 var header = self._templateHeader();
                 build_messages();
-                $el_workflow = self.$( '.user-workflows' );
-                // console.log($el_workflow);
                 // Add the actions buttons
                 var template_actions = self._templateActionButtons();
-                var workflows = this.collection;
-                // _.each(workflows, function(workflow) {
-                //     this.$( '.user-workflows' ).find('tbody').append(workflowItemView.render().el);
-                // });
-                console.log('The workflows');
-                // console.log(workflows);
-
                 var table_template = self._templateWorkflowTable();
                 this.$el.html( header + template_actions + table_template);
-
-                console.log(table_template);
                 _(this.collection.models).each(function(item){ // in case collection is not empty
                     self.appendItem(item, prepend=false);
                 }, this);
                 self.adjust_actiondropdown( this.$el );
-                // Register delete and run workflow events
-                // _.each( workflows, function( wf ) {
-                //    self.confirm_delete( wf );
-                //});
-                self.register_show_tool_menu();
-                // Register search workflow event
                 self.search_workflow( self.$( '.search-wf' ), self.$( '.workflow-search tr' ), min_query_length );
                 return this;
-        },
-
-        prependItem: function(item){
-            this.appendItem(item, true);
         },
 
         appendItem: function(item, prepend){
@@ -214,22 +190,8 @@ define( [ 'utils/utils', 'mvc/ui/ui-misc', "mvc/tag", "mvc/workflow/workflow-mod
                 model: item,
                 collection: this,
             });
-            if (prepend === true){
-                console.log('prepending');
-                self.$( '.workflow-search' ).prepend(workflowItemView.render().el);
-            } else {
-                console.log('appending');
-                self.$( '.workflow-search' ).append(workflowItemView.render().el);
-            }
+            self.$( '.workflow-search' ).append(workflowItemView.render().el);
             workflowItemView.render_tag_editor();
-        },
-
-        // Save the workflow as an item in Tool panel
-        register_show_tool_menu: function() {
-            var $el_checkboxes = this.$( '.show-in-tool-panel' );
-            $el_checkboxes.on( 'click', function( e ) {
-                window.location = Galaxy.root + 'workflow';
-            });
         },
 
         /** Add confirm box before removing/unsharing workflow */
@@ -314,8 +276,6 @@ define( [ 'utils/utils', 'mvc/ui/ui-misc', "mvc/tag", "mvc/workflow/workflow-mod
                     '</tr></thead>';
             return tableHtml + '<tbody class="workflow-search">' + '</tbody></table>';
         },
-
-
 
         /** Main template */
         _templateHeader: function() {
