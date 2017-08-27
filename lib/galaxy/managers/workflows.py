@@ -1,7 +1,6 @@
 from __future__ import absolute_import
 
 from six import string_types
-import sqltap
 
 from collections import namedtuple
 import logging
@@ -9,7 +8,7 @@ import json
 import uuid
 
 from sqlalchemy import and_
-from sqlalchemy.orm import eagerload, joinedload, subqueryload
+from sqlalchemy.orm import joinedload, subqueryload
 
 from galaxy import model
 from galaxy import util
@@ -233,6 +232,8 @@ class WorkflowContentsManager(UsesAnnotations):
             if data['annotation']:
                 annotation = sanitize_html(data['annotation'], 'utf-8', 'text/html')
                 self.add_item_annotation(trans.sa_session, stored.user, stored, annotation)
+            workflow_tags = data.get('tags', [])
+            trans.app.tag_handler.set_tags_from_list(user=trans.user, item=stored, new_tags_list=workflow_tags)
 
             # Persist
             trans.sa_session.add(stored)
@@ -260,12 +261,11 @@ class WorkflowContentsManager(UsesAnnotations):
     def update_workflow_from_dict(self, trans, stored_workflow, workflow_data):
         # Put parameters in workflow mode
         trans.workflow_building_mode = True
-        workflow_name = workflow_data.get('name')
 
         workflow, missing_tool_tups = self._workflow_from_dict(
             trans,
             workflow_data,
-            name=workflow_name,
+            name=stored_workflow.name,
         )
 
         if missing_tool_tups:
@@ -277,8 +277,6 @@ class WorkflowContentsManager(UsesAnnotations):
         # Connect up
         workflow.stored_workflow = stored_workflow
         stored_workflow.latest_workflow = workflow
-        if stored_workflow.name != workflow.name:
-            stored_workflow.name = workflow.name
         # Persist
         trans.sa_session.flush()
         # Return something informative
@@ -367,7 +365,6 @@ class WorkflowContentsManager(UsesAnnotations):
         missing_tools = []
         errors = {}
         for step in workflow.steps:
-            pass
             try:
                 module_injector.inject(step, steps=workflow.steps)
             except exceptions.ToolMissingException:
@@ -434,7 +431,6 @@ class WorkflowContentsManager(UsesAnnotations):
         }
 
     def _workflow_to_dict_editor(self, trans, stored):
-        # profiler = sqltap.start()
         workflow = stored.latest_workflow
         # Pack workflow data into a dictionary and return
         data = {}
@@ -453,14 +449,13 @@ class WorkflowContentsManager(UsesAnnotations):
             upgrade_message = module.check_and_update_state()
             if upgrade_message:
                 data['upgrade_messages'][step.order_index] = upgrade_message
-            # if (hasattr(module, "version_changes")) and (module.version_changes):
-            #     if step.order_index in data['upgrade_messages']:
-            #         data['upgrade_messages'][step.order_index][module.tool.name] = "\n".join(module.version_changes)
-            #     else:
-            #         data['upgrade_messages'][step.order_index] = {module.tool.name: "\n".join(module.version_changes)}
+            if (hasattr(module, "version_changes")) and (module.version_changes):
+                if step.order_index in data['upgrade_messages']:
+                    data['upgrade_messages'][step.order_index][module.tool.name] = "\n".join(module.version_changes)
+                else:
+                    data['upgrade_messages'][step.order_index] = {module.tool.name: "\n".join(module.version_changes)}
             # Get user annotation.
-            # step_annotation = self.get_item_annotation_obj(trans.sa_session, trans.user, step)
-            step_annotation = ''
+            step_annotation = self.get_item_annotation_obj(trans.sa_session, trans.user, step)
             annotation_str = ""
             if step_annotation:
                 annotation_str = step_annotation.annotation
@@ -548,8 +543,6 @@ class WorkflowContentsManager(UsesAnnotations):
             step_dict['position'] = step.position
             # Add to return value
             data['steps'][step.order_index] = step_dict
-        # statistics = profiler.collect()
-        # sqltap.report(statistics, "/Users/mvandenb/src/galaxy/%s.html" % stored.id, report_format="html")
         return data
 
     def _workflow_to_dict_export(self, trans, stored=None, workflow=None):
@@ -560,16 +553,19 @@ class WorkflowContentsManager(UsesAnnotations):
             workflow = stored.latest_workflow
 
         annotation_str = ""
+        workflow_tags = []
         if stored is not None:
             workflow_annotation = self.get_item_annotation_obj(trans.sa_session, trans.user, stored)
             if workflow_annotation:
                 annotation_str = workflow_annotation.annotation
+            workflow_tags = stored.make_tag_string_list()
         # Pack workflow data into a dictionary and return
         data = {}
         data['a_galaxy_workflow'] = 'true'  # Placeholder for identifying galaxy workflow
         data['format-version'] = "0.1"
         data['name'] = workflow.name
         data['annotation'] = annotation_str
+        data['tags'] = workflow_tags
         if workflow.uuid is not None:
             data['uuid'] = str(workflow.uuid)
         data['steps'] = {}
@@ -607,7 +603,7 @@ class WorkflowContentsManager(UsesAnnotations):
             }
             # Add tool shed repository information and post-job actions to step dict.
             if module.type == 'tool':
-                if module.tool.tool_shed:
+                if module.tool and module.tool.tool_shed:
                     step_dict["tool_shed_repository"] = {
                         'name': module.tool.repository_name,
                         'owner': module.tool.repository_owner,
@@ -680,7 +676,9 @@ class WorkflowContentsManager(UsesAnnotations):
                         data_input_names[prefixed_name] = True
                 # FIXME: this updates modules silently right now; messages from updates should be provided.
                 module.check_and_update_state()
-                visit_input_values(module.tool.inputs, module.state.inputs, callback)
+                if module.tool:
+                    # Visiting input values only if tool is installed
+                    visit_input_values(module.tool.inputs, module.state.inputs, callback)
                 # Filter
                 # FIXME: this removes connection without displaying a message currently!
                 input_connections = [conn for conn in input_connections if (conn.input_name in data_input_names or conn.non_data_connection)]

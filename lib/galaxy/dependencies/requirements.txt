@@ -68,3 +68,4 @@ ecdsa
 # We still pin these dependencies because of modifications to the upstream packages
 
 # Flexible BAM index naming
+pysam==0.8.4+gx5

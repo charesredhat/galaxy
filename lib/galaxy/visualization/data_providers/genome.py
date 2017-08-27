@@ -10,16 +10,11 @@ import re
 import sys
 from json import loads
 
-try:
-    import pysam
-except Exception:
-    pysam = None
-try:
-    from bx.interval_index_file import Indexes
-    from bx.bbi.bigbed_file import BigBedFile
-    from bx.bbi.bigwig_file import BigWigFile
-except Exception:
-    Indexes, BigBedFile, BigWigFile = None, None, None
+import pysam
+from bx.interval_index_file import Indexes
+from bx.bbi.bigbed_file import BigBedFile
+from bx.bbi.bigwig_file import BigWigFile
+from pysam import ctabix
 
 from galaxy.datatypes.interval import Bed, Gff, Gtf
 from galaxy.datatypes.util.gff_util import convert_gff_coords_to_bed, GFFFeature, GFFInterval, GFFReaderWrapper, parse_gff_attributes
@@ -348,7 +343,7 @@ class TabixDataProvider(FilterableMixin, GenomeDataProvider):
     col_name_data_attr_mapping = {4: {'index': 4, 'name': 'Score'}}
 
     def open_data_file(self):
-        return pysam.ctabix.Tabixfile(self.dependencies['bgzip'].file_name,
+        return ctabix.Tabixfile(self.dependencies['bgzip'].file_name,
                                 index=self.converted_dataset.file_name)
 
     def get_iterator(self, data_file, chrom, start, end, **kwargs):

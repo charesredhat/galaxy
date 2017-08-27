@@ -1858,9 +1858,9 @@ class Tool(object, Dictifiable):
 
         # create tool help
         tool_help = ''
-        # if self.help:
-        #     tool_help = self.help.render(static_path=url_for('/static'), host_url=url_for('/', qualified=True))
-        #     tool_help = unicodify(tool_help, 'utf-8')
+        if self.help:
+            tool_help = self.help.render(static_path=url_for('/static'), host_url=url_for('/', qualified=True))
+            tool_help = unicodify(tool_help, 'utf-8')
 
         # create tool versions
         tool_versions = self.lineage.tool_versions if self.lineage else []  # lineage may be `None` if tool is not loaded into tool panel
