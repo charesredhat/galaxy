@@ -30,7 +30,6 @@ class ManagesIntegratedToolPanelMixin:
     def _init_integrated_tool_panel(self, config):
         self.update_integrated_tool_panel = config.update_integrated_tool_panel
         self._integrated_tool_panel_config = config.integrated_tool_panel_config
-        self._integrated_tool_panel_tracking_directory = getattr(config, "integrated_tool_panel_tracking_directory", None)
         # In-memory dictionary that defines the layout of the tool_panel.xml file on disk.
         self._integrated_tool_panel = ToolPanelElements()
         self._integrated_tool_panel_config_has_contents = os.path.exists(self._integrated_tool_panel_config) and os.stat(self._integrated_tool_panel_config).st_size > 0
@@ -51,14 +50,6 @@ class ManagesIntegratedToolPanelMixin:
         use this file to manage the tool panel, we'll not use xml_to_string() since it doesn't write XML quite right.
         """
         integrated_tool_panel = []
-        tracking_directory = self._integrated_tool_panel_tracking_directory
-        if not tracking_directory:
-            fd, filename = tempfile.mkstemp()
-        else:
-            if not os.path.exists(tracking_directory):
-                os.makedirs(tracking_directory)
-            name = "integrated_tool_panel_%.10f.xml" % time.time()
-            filename = os.path.join(tracking_directory, name)
         integrated_tool_panel.append('<?xml version="1.0"?>')
         integrated_tool_panel.append('<toolbox>')
         integrated_tool_panel.append('    <!--\n    ')
@@ -96,12 +87,6 @@ class ManagesIntegratedToolPanelMixin:
                     integrated_tool_panel.append('    </section>')
         integrated_tool_panel.append('</toolbox>')
         integrated_tool_panel = "\n".join(integrated_tool_panel)
-        with open(filename, 'w') as panel_out:
+        with open(self._integrated_tool_panel_config, 'w') as panel_out:
             panel_out.write(integrated_tool_panel)
-        destination = os.path.abspath(self._integrated_tool_panel_config)
-        if tracking_directory:
-            open(filename + ".stack", "w").write(''.join(traceback.format_stack()))
-            shutil.copy(filename, filename + ".copy")
-            filename = filename + ".copy"
-        shutil.move(filename, destination)
         os.chmod(self._integrated_tool_panel_config, 0o644)
