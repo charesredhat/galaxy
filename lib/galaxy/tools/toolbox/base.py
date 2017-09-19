@@ -771,7 +771,7 @@ class AbstractToolBox(Dictifiable, ManagesIntegratedToolPanelMixin, object):
 
     def load_hidden_lib_tool(self, path):
         tool_xml = os.path.join(os.getcwd(), "lib", path)
-        return self.load_hidden_tool(tool_xml)
+        return self.load_hidden_tool(tool_xml, use_cached=True)
 
     def load_hidden_tool(self, config_file, **kwds):
         """ Load a hidden tool (in this context meaning one that does not
