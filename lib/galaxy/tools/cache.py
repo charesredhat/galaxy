@@ -21,6 +21,23 @@ class ToolCache(object):
         self._mod_time_by_path = {}
         self._new_tool_ids = set()
         self._removed_tool_ids = set()
+        self._known_broken = set()
+
+    def add_broken(self, config_filename):
+        """A set of tools to skip when reloading the toolbox."""
+        self._known_broken.add(config_filename)
+        mtime = os.path.getmtime(config_filename)
+        self._mod_time_by_path[config_filename] = mtime
+
+    def is_broken(self, config_filename):
+        """Checks if `config_filename` points to a tool that is known to be broken."""
+        return config_filename in self._known_broken
+
+    def is_updated(self, config_filename):
+        new_mtime = os.path.getmtime(config_filename)
+        if self._mod_time_by_path.get(config_filename) < new_mtime:
+            return md5_hash_file(config_filename) != self._hash_by_tool_paths.get(config_filename)
+        return False
 
     def cleanup(self):
         """
@@ -42,6 +59,9 @@ class ToolCache(object):
                 self._removed_tool_ids.add(tool_id)
                 if tool_id in self._new_tool_ids:
                     self._new_tool_ids.remove(tool_id)
+            for broken_tool in self._known_broken:
+                if self.is_updated(broken_tool):
+                    self._known_broken.remove(broken_tool)
         except Exception:
             # If by chance the file is being removed while calculating the hash or modtime
             # we don't want the thread to die.
@@ -52,20 +72,17 @@ class ToolCache(object):
         """Return True if `config_filename` does not exist or if modtime and hash have changes, else return False."""
         if not os.path.exists(config_filename):
             return True
-        new_mtime = os.path.getmtime(config_filename)
-        if self._mod_time_by_path.get(config_filename) < new_mtime:
-            if md5_hash_file(config_filename) != self._hash_by_tool_paths.get(config_filename):
-                return True
+        if self.is_updated(config_filename):
+            return True
         tool = self._tools_by_path[config_filename]
         for macro_path in tool._macro_paths:
-            new_mtime = os.path.getmtime(macro_path)
-            if self._mod_time_by_path.get(macro_path) < new_mtime:
+            if self.is_updated(macro_path):
                 return True
         return False
 
     def get_tool(self, config_filename):
         """Get the tool at `config_filename` from the cache if the tool is up to date."""
-        return self._tools_by_path.get(config_filename, None)
+        return self._tools_by_path.get(config_filename)
 
     def get_tool_by_id(self, tool_id):
         """Get the tool with the id `tool_id` from the cache if the tool is up to date. """
@@ -74,12 +91,15 @@ class ToolCache(object):
     def expire_tool(self, tool_id):
         if tool_id in self._tool_paths_by_id:
             config_filename = self._tool_paths_by_id[tool_id]
-            del self._hash_by_tool_paths[config_filename]
-            del self._tool_paths_by_id[tool_id]
-            del self._tools_by_path[config_filename]
-            del self._mod_time_by_path[config_filename]
-            if tool_id in self._new_tool_ids:
-                self._new_tool_ids.remove(tool_id)
+            try:
+                del self._hash_by_tool_paths[config_filename]
+                del self._tool_paths_by_id[tool_id]
+                del self._tools_by_path[config_filename]
+                del self._mod_time_by_path[config_filename]
+                if tool_id in self._new_tool_ids:
+                    self._new_tool_ids.remove(tool_id)
+            except KeyError:
+                pass
 
     def cache_tool(self, config_filename, tool):
         tool_hash = md5_hash_file(config_filename)

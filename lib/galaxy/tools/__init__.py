@@ -256,11 +256,15 @@ class ToolBox(BaseGalaxyToolBox):
                 enable_beta_formats=getattr(self.app.config, "enable_beta_tool_formats", False),
                 tool_location_fetcher=self.tool_location_fetcher,
             )
+            tool = self._create_tool_from_source(tool_source, config_file=config_file, **kwds)
         except Exception as e:
             # capture and log parsing errors
             global_tool_errors.add_error(config_file, "Tool XML parsing", e)
+            tool_cache = getattr(self.app, 'tool_cache', None)
+            if tool_cache:
+                tool_cache.add_broken(config_file)
             raise e
-        return self._create_tool_from_source(tool_source, config_file=config_file, **kwds)
+        return tool
 
     def _create_tool_from_source(self, tool_source, **kwds):
         return create_tool_from_source(self.app, tool_source, **kwds)

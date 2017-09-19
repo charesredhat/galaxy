@@ -544,6 +544,7 @@ class AbstractToolBox(Dictifiable, ManagesIntegratedToolPanelMixin, object):
                 raise IOError
             tool_shed_repository = None
             can_load_into_panel_dict = True
+            skip_exception = False
 
             tool = self.load_tool_from_cache(concrete_path)
             from_cache = tool
@@ -560,6 +561,11 @@ class AbstractToolBox(Dictifiable, ManagesIntegratedToolPanelMixin, object):
                     repository_id = self.app.security.encode_id(tool_shed_repository.id)
                     tool = self.load_tool(concrete_path, guid=guid, repository_id=repository_id, use_cached=False)
             if not tool:  # tool was not in cache and is not a tool shed tool.
+                tool_cache = getattr(self.app, 'tool_cache', None)
+                if tool_cache and tool_cache.is_broken(concrete_path):
+                    # We know this is broken, no point cluttering the logs during reload
+                    skip_exception = True
+                    raise Exception("Tool cannot be loaded")
                 tool = self.load_tool(concrete_path, use_cached=False)
             if string_as_bool(item.get('hidden', False)):
                 tool.hidden = True
@@ -585,7 +591,8 @@ class AbstractToolBox(Dictifiable, ManagesIntegratedToolPanelMixin, object):
         except IOError:
             log.error("Error reading tool configuration file from path: %s" % path)
         except Exception:
-            log.exception("Error reading tool from path: %s", path)
+            if not skip_exception:
+                log.exception("Error reading tool from path: %s", path)
 
     def get_tool_repository_from_xml_item(self, item, path):
         tool_shed = item.elem.find("tool_shed").text
@@ -745,15 +752,11 @@ class AbstractToolBox(Dictifiable, ManagesIntegratedToolPanelMixin, object):
             tool = self.load_tool_from_cache(config_file)
         if not tool:
             tool = self.create_tool(config_file=config_file, repository_id=repository_id, guid=guid, **kwds)
-            if tool.tool_shed_repository or not guid:
+            if tool:
                 self.add_tool_to_cache(tool, config_file)
-        if not tool.id.startswith("__"):
-            # do not monitor special tools written to tmp directory - no reason
-            # to monitor such a large directory.
-            if self._tool_watcher:
-                self._tool_watcher.watch_file(config_file, tool.id)
-            if self._tool_config_watcher:
-                [self._tool_config_watcher.watch_file(macro_path) for macro_path in tool._macro_paths]
+                if self._tool_config_watcher and not tool.id.startswith("__"):
+                    self._tool_config_watcher.watch_file(config_file)
+                    [self._tool_config_watcher.watch_file(macro_path) for macro_path in tool._macro_paths]
         return tool
 
     def add_tool_to_cache(self, tool, config_file):
