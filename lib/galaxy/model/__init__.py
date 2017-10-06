@@ -1976,7 +1976,7 @@ class DatasetInstance(object):
         self.metadata = metadata or dict()
         self.extended_metadata = extended_metadata
         if dbkey:  # dbkey is stored in metadata, only set if non-zero, or else we could clobber one supplied by input 'metadata'
-            self.dbkey = dbkey
+            self._metadata['dbkey'] = dbkey
         self.deleted = deleted
         self.visible = visible
         # Relationships
@@ -2060,8 +2060,8 @@ class DatasetInstance(object):
 
     def set_dbkey(self, value):
         if "dbkey" in self.datatype.metadata_spec:
-            if not isinstance(value, list):
-                self.metadata.dbkey = [value]
+            if isinstance(value, list):
+                self.metadata.dbkey = value[0]
             else:
                 self.metadata.dbkey = value
     dbkey = property(get_dbkey, set_dbkey)
@@ -2676,7 +2676,8 @@ class HistoryDatasetAssociationHistory(object):
         self.version = version
         self.extension = extension
         self.extended_metadata_id = extended_metadata_id
-        if isinstance(metadata['dbkey'], list):
+        dbkey = metadata.get('dbkey')
+        if dbkey and isinstance(dbkey, list):
             # The dbkey may or may not be stored in a list.
             # To facilitate comparison we use the raw value
             metadata = metadata.copy()
