@@ -7,6 +7,7 @@ import logging
 
 from six.moves.urllib.parse import unquote_plus
 from sqlalchemy import desc, false, or_, true
+from sqlalchemy.orm import joinedload, subqueryload
 
 from galaxy import (
     exceptions,
@@ -128,7 +129,8 @@ class WorkflowsAPIController(BaseAPIController, UsesStoredWorkflowMixin, UsesAnn
             filter1 = or_(filter1, (trans.app.model.StoredWorkflow.published == true()))
         for wf in trans.sa_session.query(trans.app.model.StoredWorkflow).filter(
                 filter1, trans.app.model.StoredWorkflow.table.c.deleted == false()).order_by(
-                desc(trans.app.model.StoredWorkflow.table.c.update_time)).all():
+                desc(trans.app.model.StoredWorkflow.table.c.update_time)).options(
+                    joinedload('tags'), subqueryload('workflows').joinedload('steps')).all():
 
             item = wf.to_dict(value_mapper={'id': trans.security.encode_id})
             encoded_id = trans.security.encode_id(wf.id)
