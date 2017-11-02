@@ -80,12 +80,13 @@ class ShellJobRunner(AsynchronousJobRunner):
             **job_file_kwargs
         )
 
-        try:
-            self.write_executable_script(ajs.job_file, script)
-        except Exception:
-            log.exception("(%s) failure writing job script" % galaxy_id_tag)
-            job_wrapper.fail("failure preparing job script", exception=True)
-            return
+        if not hasattr(job_interface.submit_pipe):
+            try:
+                self.write_executable_script(ajs.job_file, script)
+            except Exception:
+                log.exception("(%s) failure writing job script" % galaxy_id_tag)
+                job_wrapper.fail("failure preparing job script", exception=True)
+                return
 
         # job was deleted while we were preparing it
         if job_wrapper.get_state() == model.Job.states.DELETED:
@@ -96,7 +97,10 @@ class ShellJobRunner(AsynchronousJobRunner):
 
         log.debug("(%s) submitting file: %s" % (galaxy_id_tag, ajs.job_file))
 
-        returncode, stdout = self.submit(shell, job_interface, ajs.job_file, galaxy_id_tag, retry=MAX_SUBMIT_RETRY)
+        if hasattr(job_interface.submit_pipe):
+            returncode, stdout = self.submit(shell, job_interface, ajs.job_file, galaxy_id_tag, retry=MAX_SUBMIT_RETRY, script=script)
+        else:
+            returncode, stdout = self.submit(shell, job_interface, ajs.job_file, galaxy_id_tag, retry=MAX_SUBMIT_RETRY)
         if returncode != 0:
             job_wrapper.fail("failure submitting job")
             return
@@ -121,14 +125,17 @@ class ShellJobRunner(AsynchronousJobRunner):
         # Add to our 'queue' of jobs to monitor
         self.monitor_queue.put(ajs)
 
-    def submit(self, shell, job_interface, job_file, galaxy_id_tag, retry=MAX_SUBMIT_RETRY, timeout=10):
+    def submit(self, shell, job_interface, job_file, galaxy_id_tag, retry=MAX_SUBMIT_RETRY, timeout=10, script=None):
         """
         Handles actual job script submission.
 
         If submission fails will retry `retry` time with a timeout of `timeout` seconds.
         Retuns the returncode of the submission and the stdout, which contains the external job_id.
         """
-        cmd_out = shell.execute(job_interface.submit(job_file))
+        if script:
+            cmd_out = shell.execute(job_interface.submit_pipe(script))
+        else:
+            cmd_out = shell.execute(job_interface.submit(job_file))
         if cmd_out.returncode == 0:
             return cmd_out.returncode, cmd_out.stdout
         stdout = '(%s) submission failed (stdout): %s' % (galaxy_id_tag, cmd_out.stdout)

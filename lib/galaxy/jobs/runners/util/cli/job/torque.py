@@ -69,6 +69,9 @@ class Torque(BaseJobExec):
     def submit(self, script_file):
         return 'qsub %s' % script_file
 
+    def submit_pipe(self, script):
+        return 'echo "%s"| qsub' % script
+
     def delete(self, job_id):
         return 'qdel %s' % job_id
 
