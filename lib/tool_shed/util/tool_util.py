@@ -174,7 +174,7 @@ def handle_missing_index_file(app, tool_path, sample_files, repository_tools_tup
                 for sample_file in sample_files:
                     sample_file_name = basic_util.strip_path(sample_file)
                     if sample_file_name == '%s.sample' % missing_file_name:
-                        copy_sample_file(app, sample_file)
+                        copy_sample_file(app, os.path.join(tool_path, sample_file))
                         if options.tool_data_table and options.tool_data_table.missing_index_file:
                             options.tool_data_table.handle_found_index_file(options.missing_index_file)
                         sample_files_copied.append(options.missing_index_file)
