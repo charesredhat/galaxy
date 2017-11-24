@@ -170,7 +170,8 @@ class CondaContext(installable.InstallableContext):
         """
         try:
             commands.execute([self.conda_exec, '--version'])
-        except (commands.CommandLineException, OSError):
+        except (commands.CommandLineException, OSError) as e:
+            log.exception(e)
             return False
         return True
 
