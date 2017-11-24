@@ -168,10 +168,11 @@ class CondaContext(installable.InstallableContext):
         """
         Check if conda_exec exists
         """
-        if os.path.exists(self.conda_exec):
-            return True
-        else:
+        try:
+            commands.execute([self.conda_exec, '--version'])
+        except (commands.CommandLineException, OSError):
             return False
+        return True
 
     def can_install_conda(self):
         """
