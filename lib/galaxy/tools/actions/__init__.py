@@ -566,6 +566,7 @@ class DefaultToolAction(object):
                         for job in hdca.implicit_collection_jobs.jobs:
                             if job.job_id == old_job.id:
                                 job.job_id = current_job.id
+                    trans.sa_session.add(hdca)
                 jtod.dataset.visible = False
                 trans.sa_session.add(jtod)
         except Exception:
