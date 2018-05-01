@@ -5,6 +5,7 @@ import datetime
 import logging
 import os
 import time
+from collections import defaultdict
 
 from six.moves.queue import (
     Empty,
@@ -237,20 +238,16 @@ class JobHandlerQueue(Monitors):
                 .join(model.JobToInputDatasetAssociation) \
                 .join(model.HistoryDatasetAssociation) \
                 .join(model.Dataset) \
-                .filter(and_((model.Job.state == model.Job.states.NEW),
-                             or_((model.HistoryDatasetAssociation._state == model.HistoryDatasetAssociation.states.FAILED_METADATA),
-                                 (model.HistoryDatasetAssociation.deleted == true()),
-                                 (model.Dataset.state != model.Dataset.states.OK),
-                                 (model.Dataset.deleted == true())))).subquery()
+                .filter(and_(model.Job.state == model.Job.states.NEW,
+                             model.Dataset.state.in_(model.Dataset.non_ready_states))).subquery()
             ldda_not_ready = self.sa_session.query(model.Job.id).enable_eagerloads(False) \
                 .join(model.JobToInputLibraryDatasetAssociation) \
                 .join(model.LibraryDatasetDatasetAssociation) \
                 .join(model.Dataset) \
                 .filter(and_((model.Job.state == model.Job.states.NEW),
                         or_((model.LibraryDatasetDatasetAssociation._state != null()),
-                            (model.LibraryDatasetDatasetAssociation.deleted == true()),
-                            (model.Dataset.state != model.Dataset.states.OK),
-                            (model.Dataset.deleted == true())))).subquery()
+                            (model.Dataset.state.in_(model.Dataset.non_ready_states)),
+                            ))).subquery()
             if self.app.config.user_activation_on:
                 jobs_to_check = self.sa_session.query(model.Job).enable_eagerloads(False) \
                     .outerjoin(model.User) \
@@ -267,6 +264,8 @@ class JobHandlerQueue(Monitors):
                                  ~model.Job.table.c.id.in_(hda_not_ready),
                                  ~model.Job.table.c.id.in_(ldda_not_ready))) \
                     .order_by(model.Job.id).all()
+            # Filter jobs with invalid input states
+            jobs_to_check = self.__filter_jobs_with_invalid_input_states(jobs_to_check)
             # Fetch all "resubmit" jobs
             resubmit_jobs = self.sa_session.query(model.Job).enable_eagerloads(False) \
                 .filter(and_((model.Job.state == model.Job.states.RESUBMITTED),
@@ -365,6 +364,53 @@ class JobHandlerQueue(Monitors):
         self.sa_session.flush()
         # Done with the session
         self.sa_session.remove()
+
+    def __filter_jobs_with_invalid_input_states(self, jobs):
+        """
+        Takes  list of jobs and filters out jobs whose input datasets are in invalid state.
+
+        Jobs whose input datasets are deleted or whose metadata is not set properly will be set to failed,
+        while jobs whose input datasets are in error state will be paused.
+        """
+        job_ids_to_check = [j.id for j in jobs]
+        queries = []
+        for job_to_input, input_association in [(model.JobToInputDatasetAssociation, model.HistoryDatasetAssociation),
+                                                (model.JobToInputLibraryDatasetAssociation, model.LibraryDatasetDatasetAssociation)]:
+            q = self.sa_session.query(
+                model.Job.id,
+                input_association.deleted,
+                input_association._state,
+                input_association.name,
+                model.Dataset.deleted,
+                model.Dataset.state,
+            ).join(job_to_input) \
+                .join(input_association) \
+                .join(model.Dataset) \
+                .filter(model.Job.id.in_(job_ids_to_check)) \
+                .filter(or_(model.Dataset.deleted == true(),
+                            model.Dataset.state != model.Dataset.states.OK,
+                            input_association.deleted == true(),
+                            input_association._state == input_association.states.FAILED_METADATA
+                            )).all()
+            queries.extend(q)
+        failed_jobs = defaultdict(list)
+        paused_jobs = {}
+        for (job_id, hda_deleted, hda_state, hda_name, dataset_deleted, dataset_state) in queries:
+            if hda_deleted or dataset_deleted:
+                failed_jobs[job_id].append("Input dataset '%s' was deleted before the job started" % (hda_name))
+            elif hda_state == model.HistoryDatasetAssociation.states.FAILED_METADATA:
+                failed_jobs[job_id].append("Input dataset '%s' failed to properly set metadata" % (hda_name))
+            elif dataset_state != model.Dataset.states.OK:
+                job, job_wrapper = self.job_pair_for_id(job_id)
+                job_wrapper.pause(job=job, message="Execution of this dataset's job is paused because its input datasets are in an error state")
+                paused_jobs[job_id] = job_id
+        for job_id in sorted(failed_jobs.keys()):
+            fail_string = ", ".join(failed_jobs[job_id])
+            job, job_wrapper = self.job_pair_for_id(job_id)
+            log.info("Failing job '%s', %s", job_id, failed_jobs[job_id])
+            job_wrapper.fail(fail_string)
+        failed_jobs.update(paused_jobs)
+        return [j for j in jobs if j.id not in failed_jobs]
 
     def __check_job_state(self, job):
         """
