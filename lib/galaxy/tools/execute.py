@@ -226,7 +226,7 @@ class ExecutionTracker(object):
 
     def _structure_for_output(self, trans, tool_output):
         structure = self.collection_info.structure
-        if hasattr(tool_output, "default_identifier_source"):
+        if hasattr(tool_output, "default_identifier_source" and tool_output.default_identifier_source != 'None'):
             # Switch the structure for outputs if the output specified a default_identifier_source
             collection_type_descriptions = trans.app.dataset_collections_service.collection_type_descriptions
 
@@ -236,6 +236,8 @@ class ExecutionTracker(object):
                 _structure = structure.for_dataset_collection(source_collection.collection, collection_type_description=collection_type_description)
                 if structure.can_match(_structure):
                     structure = _structure
+            else:
+                log.info("Could not find identifier source '%s'", tool_output.default_identifier_source)
 
         return structure
 
